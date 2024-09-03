@@ -1,0 +1,83 @@
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      release-version:
+        description: 'Release version'
+        required: true
+      development-version:
+        description: 'Development version (without SNAPSHOT)'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Set up Node 18
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v2
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Set release version with Maven
+        run: mvn -B -V org.codehaus.mojo:versions-maven-plugin:2.5:set -DnewVersion=${{ github.event.inputs.release-version }} org.codehaus.mojo:versions-maven-plugin:2.5:commit
+
+      - name: Build with Maven
+        run: mvn -B -V install -Pdirectory
+
+      - name: Create Release
+        id: create-release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # This token is provided by Actions, you do not need to create your own token
+        with:
+          tag_name: ${{ github.event.inputs.release-version }}
+          release_name: Release ${{ github.event.inputs.release-version }}
+
+      - name: Upload Release Asset ZIP
+        id: upload-release-asset-zip
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          upload_url: ${{ steps.create-release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps
+          asset_path: ./target/sketch-canvas-${{ github.event.inputs.release-version }}.zip
+          asset_name: sketch-canvas-${{ github.event.inputs.release-version }}.zip
+          asset_content_type: application/zip
+
+      # Publish: see https://github.com/actions/setup-java#publishing-using-apache-maven
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          server-id: github # Value of the distributionManagement/repository/id field of the pom.xml
+
+      - name: Publish to GitHub Packages Apache Maven
+        run: mvn deploy -Pdeploy-github
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Set development version with Maven
+        run: mvn -B -V org.codehaus.mojo:versions-maven-plugin:2.5:set -DnewVersion=${{ github.event.inputs.development-version }} org.codehaus.mojo:versions-maven-plugin:2.5:commit
+
+      - name: Push update of development version
+        uses: actions-x/commit@v2
+        with:
+          name: github-actions
+          email: github-actions[bot]@users.noreply.github.com
+          message: "Update development version to ${{ github.event.inputs.development-version }}"
