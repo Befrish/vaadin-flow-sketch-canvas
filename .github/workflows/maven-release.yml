@@ -12,6 +12,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     # Publish: see https://github.com/actions/setup-java#publishing-using-apache-maven
     # https://blog.frankel.ch/github-actions-maven-releases/
